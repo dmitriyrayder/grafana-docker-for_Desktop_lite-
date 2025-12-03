@@ -1,0 +1,144 @@
+# Конфигурация Prometheus
+global:
+  scrape_interval: 15s # Интервал сбора метрик
+  evaluation_interval: 15s # Интервал оценки правил
+  scrape_timeout: 10s # Таймаут сбора метрик
+
+  external_labels:
+    monitor: 'docker-monitor'
+    environment: 'production'
+
+# Настройка Alertmanager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+      timeout: 10s
+
+# Правила алертинга
+rule_files:
+  - '/etc/prometheus/alerts.yml'
+
+# Конфигурация сбора метрик
+scrape_configs:
+  # Мониторинг самого Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          env: 'production'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Мониторинг Node Exporter (метрики хоста)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          env: 'production'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    # Фильтрация метрик для уменьшения нагрузки
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: '(node_cpu_.*|node_memory_.*|node_disk_.*|node_network_.*|node_filesystem_.*|node_load.*)'
+        action: keep
+
+  # Мониторинг cAdvisor (метрики контейнеров)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'cadvisor'
+          env: 'production'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    # Исключаем системные контейнеры
+    metric_relabel_configs:
+      - source_labels: [container_label_com_docker_compose_project]
+        regex: ''
+        action: drop
+
+  # Мониторинг Alertmanager
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+        labels:
+          service: 'alertmanager'
+          env: 'production'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Мониторинг Grafana
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+        labels:
+          service: 'grafana'
+          env: 'production'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Проверка доступности внешних сервисов (HTTP/HTTPS)
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://grafana:3000
+          - http://prometheus:9090
+        labels:
+          service: 'blackbox'
+          probe_type: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Проверка доступности портов (TCP)
+  - job_name: 'blackbox-tcp'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - prometheus:9090
+          - grafana:3000
+          - alertmanager:9093
+        labels:
+          service: 'blackbox'
+          probe_type: 'tcp'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Мониторинг ICMP (ping)
+  - job_name: 'blackbox-icmp'
+    metrics_path: /probe
+    params:
+      module: [icmp]
+    static_configs:
+      - targets:
+          - 8.8.8.8  # Google DNS для проверки интернет-соединения
+          - 1.1.1.1  # Cloudflare DNS
+        labels:
+          service: 'blackbox'
+          probe_type: 'icmp'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
