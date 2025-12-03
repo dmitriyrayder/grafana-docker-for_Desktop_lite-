@@ -1,0 +1,32 @@
+# Secrets and credentials
+.env
+
+# Docker volumes data
+volumes/
+
+# Grafana data
+configs/grafana/data/
+*.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Backup files
+*.bak
+*.backup

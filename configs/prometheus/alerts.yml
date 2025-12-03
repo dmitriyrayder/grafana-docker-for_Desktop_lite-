@@ -1,0 +1,249 @@
+# Правила алертинга для Prometheus
+groups:
+  # Алерты по инфраструктуре
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # Алерт при недоступности сервиса
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Сервис {{ $labels.job }} недоступен"
+          description: "Сервис {{ $labels.job }} на инстансе {{ $labels.instance }} не отвечает более 2 минут."
+
+      # Алерт при высокой загрузке CPU
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Высокая загрузка CPU на {{ $labels.instance }}"
+          description: "Загрузка CPU составляет {{ $value | humanize }}% более 5 минут."
+
+      # Критическая загрузка CPU
+      - alert: CriticalCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: "Критическая загрузка CPU на {{ $labels.instance }}"
+          description: "Загрузка CPU составляет {{ $value | humanize }}%!"
+
+  # Алерты по памяти
+  - name: memory_alerts
+    interval: 30s
+    rules:
+      # Предупреждение о нехватке памяти
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: memory
+        annotations:
+          summary: "Высокое использование памяти на {{ $labels.instance }}"
+          description: "Использование памяти составляет {{ $value | humanize }}% более 5 минут."
+
+      # Критическая нехватка памяти
+      - alert: CriticalMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: memory
+        annotations:
+          summary: "Критическое использование памяти на {{ $labels.instance }}"
+          description: "Использование памяти составляет {{ $value | humanize }}%!"
+
+      # Высокое использование swap
+      - alert: HighSwapUsage
+        expr: (1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) * 100 > 50
+        for: 5m
+        labels:
+          severity: warning
+          category: memory
+        annotations:
+          summary: "Высокое использование swap на {{ $labels.instance }}"
+          description: "Использование swap составляет {{ $value | humanize }}%."
+
+  # Алерты по дисковому пространству
+  - name: disk_alerts
+    interval: 30s
+    rules:
+      # Предупреждение о заполнении диска
+      - alert: DiskSpaceWarning
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.*"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.*"})) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "Диск {{ $labels.mountpoint }} на {{ $labels.instance }} заполнен"
+          description: "Использование диска составляет {{ $value | humanize }}%."
+
+      # Критическое заполнение диска
+      - alert: DiskSpaceCritical
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.*"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.*"})) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: storage
+        annotations:
+          summary: "Критическое заполнение диска {{ $labels.mountpoint }} на {{ $labels.instance }}"
+          description: "Использование диска составляет {{ $value | humanize }}%!"
+
+      # Высокая загрузка диска (I/O)
+      - alert: HighDiskIOUsage
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "Высокая загрузка диска на {{ $labels.instance }}"
+          description: "Диск {{ $labels.device }} перегружен операциями I/O."
+
+  # Алерты по сети
+  - name: network_alerts
+    interval: 30s
+    rules:
+      # Высокое количество ошибок сети
+      - alert: HighNetworkErrors
+        expr: rate(node_network_receive_errs_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "Высокое количество сетевых ошибок на {{ $labels.instance }}"
+          description: "Интерфейс {{ $labels.device }} получает {{ $value | humanize }} ошибок в секунду."
+
+      # Высокое количество отброшенных пакетов
+      - alert: HighNetworkDrops
+        expr: rate(node_network_receive_drop_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "Высокое количество отброшенных пакетов на {{ $labels.instance }}"
+          description: "Интерфейс {{ $labels.device }} отбрасывает {{ $value | humanize }} пакетов в секунду."
+
+  # Алерты по контейнерам
+  - name: container_alerts
+    interval: 30s
+    rules:
+      # Контейнер перезапускается
+      - alert: ContainerRestarting
+        expr: rate(container_last_seen[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Контейнер {{ $labels.name }} часто перезапускается"
+          description: "Контейнер перезапускался {{ $value | humanize }} раз за последние 5 минут."
+
+      # Высокое использование CPU контейнером
+      - alert: ContainerHighCPU
+        expr: sum(rate(container_cpu_usage_seconds_total[5m])) by (name, instance) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Контейнер {{ $labels.name }} использует много CPU"
+          description: "Использование CPU контейнером составляет {{ $value | humanize }}%."
+
+      # Высокое использование памяти контейнером
+      - alert: ContainerHighMemory
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Контейнер {{ $labels.name }} использует много памяти"
+          description: "Использование памяти контейнером составляет {{ $value | humanize }}%."
+
+  # Алерты по доступности сервисов (Blackbox)
+  - name: blackbox_alerts
+    interval: 30s
+    rules:
+      # Сервис недоступен (HTTP)
+      - alert: HTTPProbeFailure
+        expr: probe_success{probe_type="http"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "HTTP проверка не удалась для {{ $labels.instance }}"
+          description: "Endpoint {{ $labels.instance }} недоступен по HTTP более 2 минут."
+
+      # Медленный ответ HTTP
+      - alert: SlowHTTPResponse
+        expr: probe_http_duration_seconds > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Медленный ответ HTTP от {{ $labels.instance }}"
+          description: "HTTP ответ занимает {{ $value | humanize }} секунд."
+
+      # Проблемы с SSL сертификатом
+      - alert: SSLCertificateExpiry
+        expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 30
+        for: 1h
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "SSL сертификат {{ $labels.instance }} скоро истечет"
+          description: "SSL сертификат истекает через {{ $value | humanizeDuration }}."
+
+  # Алерты по Prometheus
+  - name: prometheus_alerts
+    interval: 30s
+    rules:
+      # Prometheus не может получить метрики
+      - alert: PrometheusTSDBReloadsFailing
+        expr: increase(prometheus_tsdb_reloads_failures_total[3h]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          category: monitoring
+        annotations:
+          summary: "Prometheus не может перезагрузить конфигурацию"
+          description: "Prometheus имеет {{ $value }} неудачных перезагрузок конфигурации."
+
+      # Prometheus использует много памяти
+      - alert: PrometheusHighMemory
+        expr: process_resident_memory_bytes{job="prometheus"} > 1073741824  # 1GB
+        for: 10m
+        labels:
+          severity: warning
+          category: monitoring
+        annotations:
+          summary: "Prometheus использует много памяти"
+          description: "Prometheus использует {{ $value | humanize1024 }} памяти."
+
+      # Данные Prometheus скоро закончатся
+      - alert: PrometheusDiskSpaceLow
+        expr: (prometheus_tsdb_storage_blocks_bytes / prometheus_tsdb_storage_blocks_bytes_total) > 0.9
+        for: 30m
+        labels:
+          severity: warning
+          category: monitoring
+        annotations:
+          summary: "У Prometheus заканчивается место для хранения данных"
+          description: "Использовано {{ $value | humanizePercentage }} дискового пространства."

@@ -1,0 +1,123 @@
+# Конфигурация Alertmanager
+global:
+  # Время ожидания перед отправкой уведомления
+  resolve_timeout: 5m
+  # SMTP настройки (закомментировано, настроить по необходимости)
+  # smtp_smarthost: 'smtp.gmail.com:587'
+  # smtp_from: 'alertmanager@example.com'
+  # smtp_auth_username: 'alertmanager@example.com'
+  # smtp_auth_password: 'password'
+  # smtp_require_tls: true
+
+# Шаблоны для уведомлений
+templates:
+  - '/etc/alertmanager/*.tmpl'
+
+# Маршрутизация алертов
+route:
+  # Группировка алертов по этим меткам
+  group_by: ['alertname', 'cluster', 'service']
+
+  # Время ожидания перед отправкой первого уведомления
+  group_wait: 10s
+
+  # Время между группами алертов
+  group_interval: 10s
+
+  # Время между повторными уведомлениями
+  repeat_interval: 12h
+
+  # Получатель по умолчанию
+  receiver: 'default'
+
+  # Подмаршруты для разных типов алертов
+  routes:
+    # Критические алерты
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 5s
+      repeat_interval: 4h
+
+    # Предупреждения
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      repeat_interval: 12h
+
+    # Алерты по безопасности
+    - match:
+        category: security
+      receiver: 'security-alerts'
+      group_wait: 5s
+      repeat_interval: 2h
+
+# Подавление дублирующихся алертов
+inhibit_rules:
+  # Подавляем предупреждения, если есть критический алерт
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+  # Подавляем алерты о высокой загрузке, если сервис недоступен
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match_re:
+      alertname: '(HighCPUUsage|HighMemoryUsage|HighDiskIOUsage)'
+    equal: ['instance']
+
+# Получатели уведомлений
+receivers:
+  # Получатель по умолчанию (webhook или консоль)
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://localhost:5001/alert'
+        send_resolved: true
+        http_config:
+          follow_redirects: true
+    # Раскомментируйте для email уведомлений
+    # email_configs:
+    #   - to: 'team@example.com'
+    #     from: 'alertmanager@example.com'
+    #     subject: '[Monitoring] {{ .GroupLabels.alertname }}'
+    #     html: '{{ template "email.default.html" . }}'
+
+  # Критические алерты
+  - name: 'critical-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/alert/critical'
+        send_resolved: true
+    # email_configs:
+    #   - to: 'oncall@example.com'
+    #     from: 'alertmanager@example.com'
+    #     subject: '🚨 [CRITICAL] {{ .GroupLabels.alertname }}'
+    #     html: '{{ template "email.critical.html" . }}'
+    # Можно добавить Slack, PagerDuty, и т.д.
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+    #     channel: '#critical-alerts'
+    #     title: '🚨 {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+  # Предупреждения
+  - name: 'warning-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/alert/warning'
+        send_resolved: true
+    # email_configs:
+    #   - to: 'team@example.com'
+    #     from: 'alertmanager@example.com'
+    #     subject: '⚠️ [WARNING] {{ .GroupLabels.alertname }}'
+
+  # Алерты по безопасности
+  - name: 'security-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/alert/security'
+        send_resolved: true
+    # email_configs:
+    #   - to: 'security@example.com'
+    #     from: 'alertmanager@example.com'
+    #     subject: '🔒 [SECURITY] {{ .GroupLabels.alertname }}'
